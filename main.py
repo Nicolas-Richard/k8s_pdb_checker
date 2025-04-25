@@ -167,7 +167,14 @@ def main():
     existing = []
 
     for ns, name, labels in workloads:
-        selector = ','.join(f"{k}={v}" for k, v in sorted(labels.items()))
+        # Sort labels to ensure consistent ordering for comparison
+        # This makes the selector string predictable and helps with debugging
+        sorted_labels = sorted(labels.items())
+        
+        # Join labels with commas to create a unique identifier for the label set
+        # This format matches how Kubernetes displays selectors and makes it easy to
+        # understand which labels need to be matched when creating a PDB
+        selector = ','.join(f"{k}={v}" for k, v in sorted_labels)
 
         if selector in pdb_map.get(ns, {}):
             existing.append((ns, name, pdb_map[ns][selector]))
