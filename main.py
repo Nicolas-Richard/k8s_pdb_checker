@@ -1,6 +1,7 @@
 from kubernetes import client, config
 from collections import defaultdict
 import logging
+import argparse
 
 # Configure logging
 logging.basicConfig(
@@ -127,6 +128,12 @@ def build_pdb_map(pdbs):
 
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Check Kubernetes workloads for missing PDBs')
+    parser.add_argument('--hide-pdb', action='store_true', help='Hide workloads that have PDBs')
+    parser.add_argument('--hide-zero-replicas', action='store_true', help='Hide workloads with zero replicas')
+    args = parser.parse_args()
+
     # Load kubeconfig and log cluster info
     try:
         logger.info("Loading kubeconfig...")
@@ -167,6 +174,10 @@ def main():
     existing = []
 
     for ns, name, labels, workload_type, replicas in workloads:
+        # Skip workloads with zero replicas if --hide-zero-replicas is set
+        if args.hide_zero_replicas and replicas == 0:
+            continue
+
         # Sort labels to ensure consistent ordering for comparison
         # This makes the selector string predictable and helps with debugging
         sorted_labels = sorted(labels.items())
@@ -182,9 +193,10 @@ def main():
             missing.append((ns, name, selector, workload_type, replicas))
 
     # Print results
-    logger.info("\nWorkloads with PDBs:")
-    for ns, name, pdb_name, workload_type, _ in existing:
-        logger.info(f"✅ {ns}/{name} ({workload_type}) -> {pdb_name}")
+    if not args.hide_pdb:
+        logger.info("\nWorkloads with PDBs:")
+        for ns, name, pdb_name, workload_type, _ in existing:
+            logger.info(f"✅ {ns}/{name} ({workload_type}) -> {pdb_name}")
 
     logger.info("\nWorkloads without PDBs:")
     for ns, name, selector, workload_type, replicas in missing:
@@ -193,7 +205,8 @@ def main():
         else:
             logger.info(f"❌ {ns}/{name} ({workload_type}) (selector: {selector})")
 
-    logger.info(f"\nSummary: {len(existing)} with PDBs, {len(missing)} without")
+    total_workloads = len(existing) + len(missing)
+    logger.info(f"\nSummary: {len(existing)} with PDBs, {len(missing)} without (Total: {total_workloads})")
 
 
 if __name__ == '__main__':
