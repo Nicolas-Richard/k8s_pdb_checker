@@ -62,21 +62,21 @@ def get_workloads():
     logger.info("Fetching Deployments...")
     deployments = apps_v1.list_deployment_for_all_namespaces().items
     resources.extend([
-        (d.metadata.namespace, d.metadata.name, d.spec.selector.match_labels)
+        (d.metadata.namespace, d.metadata.name, d.spec.selector.match_labels, "deployment", None)
         for d in deployments
     ])
 
     logger.info("Fetching StatefulSets...")
     statefulsets = apps_v1.list_stateful_set_for_all_namespaces().items
     resources.extend([
-        (s.metadata.namespace, s.metadata.name, s.spec.selector.match_labels)
+        (s.metadata.namespace, s.metadata.name, s.spec.selector.match_labels, "statefulset", None)
         for s in statefulsets
     ])
 
     logger.info("Fetching DaemonSets...")
     daemonsets = apps_v1.list_daemon_set_for_all_namespaces().items
     resources.extend([
-        (d.metadata.namespace, d.metadata.name, d.spec.selector.match_labels)
+        (d.metadata.namespace, d.metadata.name, d.spec.selector.match_labels, "daemonset", None)
         for d in daemonsets
     ])
 
@@ -88,7 +88,7 @@ def get_workloads():
             plural="rollouts"
         )
         resources.extend([
-            (r['metadata']['namespace'], r['metadata']['name'], r['spec']['selector']['matchLabels'])
+            (r['metadata']['namespace'], r['metadata']['name'], r['spec']['selector']['matchLabels'], "rollout", r['spec'].get('replicas', 1))
             for r in rollouts['items']
         ])
     except Exception as e:
@@ -166,7 +166,7 @@ def main():
     missing = []
     existing = []
 
-    for ns, name, labels in workloads:
+    for ns, name, labels, workload_type, replicas in workloads:
         # Sort labels to ensure consistent ordering for comparison
         # This makes the selector string predictable and helps with debugging
         sorted_labels = sorted(labels.items())
@@ -177,18 +177,21 @@ def main():
         selector = ','.join(f"{k}={v}" for k, v in sorted_labels)
 
         if selector in pdb_map.get(ns, {}):
-            existing.append((ns, name, pdb_map[ns][selector]))
+            existing.append((ns, name, pdb_map[ns][selector], workload_type, replicas))
         else:
-            missing.append((ns, name, selector))
+            missing.append((ns, name, selector, workload_type, replicas))
 
     # Print results
     logger.info("\nWorkloads with PDBs:")
-    for ns, name, pdb_name in existing:
-        logger.info(f"✅ {ns}/{name} -> {pdb_name}")
+    for ns, name, pdb_name, workload_type, _ in existing:
+        logger.info(f"✅ {ns}/{name} ({workload_type}) -> {pdb_name}")
 
     logger.info("\nWorkloads without PDBs:")
-    for ns, name, selector in missing:
-        logger.info(f"❌ {ns}/{name} (selector: {selector})")
+    for ns, name, selector, workload_type, replicas in missing:
+        if workload_type == "rollout":
+            logger.info(f"❌ {ns}/{name} ({workload_type}) - Replicas: {replicas} (selector: {selector})")
+        else:
+            logger.info(f"❌ {ns}/{name} ({workload_type}) (selector: {selector})")
 
     logger.info(f"\nSummary: {len(existing)} with PDBs, {len(missing)} without")
 
